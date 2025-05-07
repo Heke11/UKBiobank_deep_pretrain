@@ -20,24 +20,34 @@ def num2vect(x, bin_range, bin_step, sigma):
     bin_number = int(bin_length / bin_step)
     bin_centers = bin_start + float(bin_step) / 2 + bin_step * np.arange(bin_number)
 
-    if sigma == 0:
+    if sigma == 0:               
+        '''
+        用于性别分类
+        sigma = 0 实现的是硬标签（hard label），对应于硬分类的情况，即每个数据点只属于一个明确的类别
+        '''
         x = np.array(x)
         # a = np.array([-1.7, -1.5, -0.2, 0.2, 1.5, 1.7, 2.0])
         # print(np.floor(a)) # Output: [-2. -2. -1. 0. 1. 1. 2.]   np.floor()转换成小于原来的数的最大整数
         i = np.floor((x - bin_start) / bin_step)                
         i = i.astype(int)
         return i, bin_centers
-    elif sigma > 0:
-        if np.isscalar(x):
+    elif sigma > 0:           
+        '''
+        用于年龄回归
+        当 sigma > 0 时，标签不是一个硬分类（hard label），而是一个概率分布。
+        这个概率分布以真实年龄为中心，并根据sigma决定分布的宽度。
+        这种方法通过计算预测的概率分布与真实的软标签分布之间的KL散度（Kullback-Leibler divergence）来计算损失
+        '''
+        if np.isscalar(x):                             # np.isscaler(x)判断x是否是标量类型，标量就是只有单个值，数组不是标量
             v = np.zeros((bin_number,))
             for i in range(bin_number):
                 x1 = bin_centers[i] - float(bin_step) / 2
                 x2 = bin_centers[i] + float(bin_step) / 2
-                cdfs = norm.cdf([x1, x2], loc=x, scale=sigma)
-                v[i] = cdfs[1] - cdfs[0]
-            return v, bin_centers
-        else:
-            v = np.zeros((len(x), bin_number))
+                cdfs = norm.cdf([x1, x2], loc=x, scale=sigma)            # norm.cdf()是把样本年龄映射到一个概率分布，cdf计算累积概率
+                v[i] = cdfs[1] - cdfs[0]                # cdfs[0]是累积到x1的概率，cdfs[1]是累积到x2的概率，v[i]是区间[x1,x2]之间的概率
+            return v, bin_centers            # v包含了这个样本年龄对应的所有年龄区间的概率分布
+        else:            # x包含多个样本年龄
+            v = np.zeros((len(x), bin_number))        
             for j in range(len(x)):
                 for i in range(bin_number):
                     x1 = bin_centers[i] - float(bin_step) / 2
