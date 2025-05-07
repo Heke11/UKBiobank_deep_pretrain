@@ -11,4 +11,4 @@ def my_KLDivLoss(x, y):            # x,y都是[batch_size, 40]
     n = y.shape[0]            # n是批量大小
     loss = loss_func(x, y) / n
     #print(loss)
-    return loss
+    return loss            # 一个批量中每个样本的平均损失
