@@ -22,7 +22,9 @@ def num2vect(x, bin_range, bin_step, sigma):
 
     if sigma == 0:
         x = np.array(x)
-        i = np.floor((x - bin_start) / bin_step)
+        # a = np.array([-1.7, -1.5, -0.2, 0.2, 1.5, 1.7, 2.0])
+        # print(np.floor(a)) # Output: [-2. -2. -1. 0. 1. 1. 2.]   np.floor()转换成小于原来的数的最大整数
+        i = np.floor((x - bin_start) / bin_step)                
         i = i.astype(int)
         return i, bin_centers
     elif sigma > 0:
