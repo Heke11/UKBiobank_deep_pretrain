@@ -83,6 +83,46 @@ model = SFCN(output_dim=40)              ## IXI数据集20-86岁，ADNI总体上
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 
+###
+# Transforming the age to soft label (probability distribution)
+bin_range = [42,82]
+bin_step = 1
+sigma = 1
+y, bc = dpu.num2vect(label, bin_range, bin_step, sigma)
+y = torch.tensor(y, dtype=torch.float32)
+print(f'Label shape: {y.shape}')
+
+# Preprocessing
+data = data/data.mean()
+data = dpu.crop_center(data, (160, 192, 160))
+
+# Move the data from numpy to torch tensor on GPU
+sp = (1,1)+data.shape
+data = data.reshape(sp)
+input_data = torch.tensor(data, dtype=torch.float32).cuda()
+print(f'Input data shape: {input_data.shape}')
+print(f'dtype: {input_data.dtype}')
+
+# Evaluation
+model.eval() # Don't forget this. BatchNorm will be affected if not in eval mode.
+with torch.no_grad():
+    output = model(input_data)
+
+# Output, loss, visualisation
+x = output[0].cpu().reshape([1, -1])
+print(f'Output shape: {x.shape}')
+loss = dpl.my_KLDivLoss(x, y).numpy()
+
+# Prediction, Visualisation and Summary
+x = x.numpy().reshape(-1)
+y = y.numpy().reshape(-1)
+
+plt.bar(bc, y)
+plt.title('Soft label')
+plt.show()
+###
+
+
 # 设置损失函数和优化器
 loss_fn = nn.MSELoss()
 loss_fn_mae = nn.L1Loss()
