@@ -3,6 +3,8 @@ from dp_model import dp_loss as dpl
 from dp_model import dp_utils as dpu
 import torch
 import torch.nn.functional as F
+import os
+import pandas as pd
 import numpy as np
 import sys
 from torch.utils.data import Dataset, DataLoader
@@ -123,6 +125,7 @@ train_image_names = []
 val_predictions = []
 val_true_labels = []
 val_image_names = []
+scaler = GradScaler()
 
 # 训练循环
 for epoch in range(num_epochs):
@@ -131,11 +134,10 @@ for epoch in range(num_epochs):
     for i, (inputs, y) in enumerate(train_loader):
         inputs, y = inputs.to(device), y.to(device)
         optimizer.zero_grad()
-        scaler = GradScaler()
         with autocast():  # 自动混合精度
             outputs = model(inputs)
-            x = outputs[0].cpu().reshape([1, -1])
-            loss = dpl.my_KLDivLoss(x, y).numpy()                                        ###输出MSE,MAE
+            x = outputs
+            loss = dpl.my_KLDivLoss(x, y)                                        ###输出MSE,MAE
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -149,8 +151,10 @@ for epoch in range(num_epochs):
 
     if epoch == num_epochs - 1:
         # 收集预测结果和真实标签
-        train_predictions.extend(outputs.detach().cpu().numpy())
-        train_true_labels.extend(targets.cpu().numpy())
+        train_predictions.extend(outputs.cpu().numpy().reshape(-1, 40))  # 对应 one-hot 40 维度
+        train_true_labels.extend(y.cpu().numpy().reshape(-1, 40))
+        #train_predictions.extend(outputs.detach().cpu().numpy())
+        #train_true_labels.extend(targets.cpu().numpy())
 
         #train_image_names.extend(train_loader.dataset.image_paths[i * train_loader.batch_size:(i + 1) * train_loader.batch_size])
         batch_image_names = train_loader.dataset.image_paths[
@@ -170,23 +174,19 @@ for epoch in range(num_epochs):
     # 输出训练损失
     print("训练集:")
     print(f"Epoch [{epoch + 1}/{num_epochs}], MSE: {running_loss / len(train_dataset)}")
-    print(f"Epoch [{epoch + 1}/{num_epochs}], MAE: {running_loss_mae / len(train_dataset)}")
 
     # 验证阶段
     model.eval()
     with torch.no_grad():
         val_loss = 0.0
         val_loss_mae = 0.0
-        for inputs, targets in val_loader:
-            inputs, targets = inputs.to(device), targets.to(device)
+        for inputs, y in val_loader:
+            inputs, y = inputs.to(device), y.to(device)
 
             outputs = model(inputs)
-            targets = targets
-
-            loss = loss_fn(outputs, targets)*inputs.shape[0]
-            loss_mae = loss_fn_mae(outputs, targets)*inputs.shape[0]
+            x = outputs
+            loss = dpl.my_KLDivLoss(x, y) 
             val_loss += loss.item()
-            val_loss_mae += loss_mae.item()
 
             
             '''
@@ -237,5 +237,5 @@ print("验证结果已保存到 'val_results.csv'")
 '''
 
 # 最后保存模型
-
-torch.save(model.state_dict(), 'brain_age_model.pth')
+model_save_path = f'brain_age_model_{time.strftime("%Y%m%d_%H%M%S")}.pth'
+torch.save(model.state_dict(), model_save_pth)
