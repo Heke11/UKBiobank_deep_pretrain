@@ -3,6 +3,8 @@ from dp_model import dp_loss as dpl
 from dp_model import dp_utils as dpu
 import torch
 import torch.nn.functional as F
+import torch.optim as optim
+import time
 import os
 import pandas as pd
 import numpy as np
