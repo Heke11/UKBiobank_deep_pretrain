@@ -1,4 +1,16 @@
-
+from dp_model.model_files.sfcn import SFCN
+from dp_model import dp_loss as dpl
+from dp_model import dp_utils as dpu
+import torch
+import torch.nn.functional as F
+import numpy as np
+import sys
+from torch.utils.data import Dataset, DataLoader
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+from torchvision import transforms
+import torch.nn.init as init
+from torch.cuda.amp import GradScaler, autocast
 
 
 # 数据加载类
@@ -51,9 +63,14 @@ def load_data(mri_dir, age_dir):
         # 假设图像文件名和标签文件名相同，标签存储在 AGE 文件夹中
         age_path = os.path.join(age_dir, image_name)
 
-        # 加载年龄标签
+        # 加载年龄标签，转换成软标签
         label = np.load(age_path)
-        labels.append(label)
+        bin_range = [54,96]
+        bin_step = 1
+        sigma = 1
+        y, bc = dpu.num2vect(label, bin_range, bin_step, sigma)
+        y = torch.tensor(y, dtype=torch.float32)
+        labels.append(y)
 
     return image_paths, labels
 
@@ -83,49 +100,8 @@ model = SFCN(output_dim=40)              ## IXI数据集20-86岁，ADNI总体上
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 
-###
-# Transforming the age to soft label (probability distribution)
-bin_range = [42,82]
-bin_step = 1
-sigma = 1
-y, bc = dpu.num2vect(label, bin_range, bin_step, sigma)
-y = torch.tensor(y, dtype=torch.float32)
-print(f'Label shape: {y.shape}')
-
-# Preprocessing
-data = data/data.mean()
-data = dpu.crop_center(data, (160, 192, 160))
-
-# Move the data from numpy to torch tensor on GPU
-sp = (1,1)+data.shape
-data = data.reshape(sp)
-input_data = torch.tensor(data, dtype=torch.float32).cuda()
-print(f'Input data shape: {input_data.shape}')
-print(f'dtype: {input_data.dtype}')
-
-# Evaluation
-model.eval() # Don't forget this. BatchNorm will be affected if not in eval mode.
-with torch.no_grad():
-    output = model(input_data)
-
-# Output, loss, visualisation
-x = output[0].cpu().reshape([1, -1])
-print(f'Output shape: {x.shape}')
-loss = dpl.my_KLDivLoss(x, y).numpy()
-
-# Prediction, Visualisation and Summary
-x = x.numpy().reshape(-1)
-y = y.numpy().reshape(-1)
-
-plt.bar(bc, y)
-plt.title('Soft label')
-plt.show()
-###
-
 
 # 设置损失函数和优化器
-loss_fn = nn.MSELoss()
-loss_fn_mae = nn.L1Loss()
 optimizer = optim.Adam(
     model.parameters(),
     lr=0.0001,  # 设置学习率为 0.0001
@@ -152,15 +128,14 @@ val_image_names = []
 for epoch in range(num_epochs):
     model.train()
     running_loss = 0.0
-    running_loss_mae = 0.0
-    for i, (inputs, targets) in enumerate(train_loader):
-        inputs, targets = inputs.to(device), targets.to(device)
+    for i, (inputs, y) in enumerate(train_loader):
+        inputs, y = inputs.to(device), y.to(device)
         optimizer.zero_grad()
         scaler = GradScaler()
         with autocast():  # 自动混合精度
             outputs = model(inputs)
-            loss = loss_fn(outputs, targets) * inputs.shape[0]
-            loss_mae = loss_fn_mae(outputs, targets) * inputs.shape[0]
+            x = outputs[0].cpu().reshape([1, -1])
+            loss = dpl.my_KLDivLoss(x, y).numpy()                                        ###输出MSE,MAE
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -170,8 +145,7 @@ for epoch in range(num_epochs):
         #loss.backward()
         #optimizer.step()
 
-        running_loss += loss.item()
-        running_loss_mae += loss_mae.item()
+        running_loss += loss.item()                      
 
     if epoch == num_epochs - 1:
         # 收集预测结果和真实标签
